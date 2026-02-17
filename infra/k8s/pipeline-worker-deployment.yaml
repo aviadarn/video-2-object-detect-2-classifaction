@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipeline-worker
+  namespace: video-pipeline
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pipeline-worker
+  template:
+    metadata:
+      labels:
+        app: pipeline-worker
+    spec:
+      containers:
+        - name: pipeline-worker
+          image: ghcr.io/example/pipeline-worker:latest
+          ports:
+            - containerPort: 9090
+              name: metrics
+          envFrom:
+            - configMapRef:
+                name: pipeline-config
+            - secretRef:
+                name: pipeline-secrets
+          resources:
+            requests:
+              cpu: 300m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pipeline-worker-metrics
+  namespace: video-pipeline
+spec:
+  selector:
+    app: pipeline-worker
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics

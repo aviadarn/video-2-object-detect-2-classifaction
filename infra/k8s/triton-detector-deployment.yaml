@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triton-detector
+  namespace: video-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: triton-detector
+  template:
+    metadata:
+      labels:
+        app: triton-detector
+    spec:
+      containers:
+        - name: triton
+          image: nvcr.io/nvidia/tritonserver:24.01-py3
+          args:
+            - tritonserver
+            - --model-repository=/models/detector
+          ports:
+            - containerPort: 8000
+              name: http
+            - containerPort: 8001
+              name: grpc
+            - containerPort: 8002
+              name: metrics
+          env:
+            - name: TRITON_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: pipeline-secrets
+                  key: TRITON_TOKEN
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: triton-detector
+  namespace: video-pipeline
+spec:
+  selector:
+    app: triton-detector
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+    - name: grpc
+      port: 8001
+      targetPort: grpc
