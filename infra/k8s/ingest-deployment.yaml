@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest
+  namespace: video-pipeline
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ingest
+  template:
+    metadata:
+      labels:
+        app: ingest
+    spec:
+      containers:
+        - name: ingest
+          image: ghcr.io/example/video-ingest:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: pipeline-config
+            - secretRef:
+                name: pipeline-secrets
+          env:
+            - name: INGEST_QUEUE_MODE
+              value: redis-stream
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingest
+  namespace: video-pipeline
+spec:
+  selector:
+    app: ingest
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
