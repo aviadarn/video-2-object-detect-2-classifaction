@@ -1,0 +1,2 @@
+This is a placeholder artifact path for the exported Detectron2 ONNX model.
+Run ../../scripts/export_detectron2_to_onnx.py to generate a real model.onnx in this directory.
