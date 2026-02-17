@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triton-swin
+  labels:
+    app: triton-swin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: triton-swin
+  template:
+    metadata:
+      labels:
+        app: triton-swin
+    spec:
+      containers:
+        - name: tritonserver
+          image: nvcr.io/nvidia/tritonserver:24.01-py3
+          args:
+            - tritonserver
+            - --model-repository=/models
+            - --strict-model-config=true
+          ports:
+            - containerPort: 8000
+              name: http
+            - containerPort: 8001
+              name: grpc
+            - containerPort: 8002
+              name: metrics
+          volumeMounts:
+            - name: model-repo
+              mountPath: /models
+      volumes:
+        - name: model-repo
+          persistentVolumeClaim:
+            claimName: triton-model-repository
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: triton-swin
+spec:
+  selector:
+    app: triton-swin
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+    - name: grpc
+      port: 8001
+      targetPort: 8001

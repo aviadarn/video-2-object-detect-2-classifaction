@@ -1,0 +1,31 @@
+apiVersion: ml.platform/v1
+kind: PreprocessingContract
+metadata:
+  name: swin-classifier-input-contract
+spec:
+  owner: services/pipeline/worker.py
+  input_mode: detectron2_crops
+  rationale: |
+    Swin is configured as an object-level classifier. It receives crops derived from
+    Detectron2 bounding boxes (xyxy) rather than full frames to preserve classifier
+    capacity for fine-grained object labels.
+  frame_source:
+    format: rgb
+    dtype: uint8
+  crop_rules:
+    box_format: xyxy
+    clamp_to_frame: true
+    min_side_pixels: 8
+    resize:
+      height: 224
+      width: 224
+      interpolation: bilinear
+    normalize:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+  batching:
+    detectron2_endpoint: detectron2_detector
+    swin_endpoint: swin_classifier
+    max_batch_size: 32
+  ids:
+    deterministic_object_id: sha1("{job_id}:{frame_id}:{box_xyxy_rounded_3dp}:{det_label}")
