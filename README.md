@@ -4,13 +4,13 @@ This repository contains a modular video inference pipeline that:
 
 1. Ingests a video job (for example, from a YouTube URL).
 2. Extracts video frames and writes a manifest.
-3. Runs object detection and classification through Triton-served models.
+3. Runs a scene-based pipeline: split -> object detection -> classification -> object tracking -> clustering -> JSON report.
 4. Exposes job inference results through an API backed by MongoDB.
 
 ## Repository layout
 
 - `services/ingest/` – FastAPI ingest service that validates input URLs, downloads video files, extracts frames, and builds a `manifest.json` for downstream processing.
-- `services/pipeline/` – worker/orchestration logic for frame-by-frame inference (Detectron2 detector + Swin classifier) and merged output records.
+- `services/pipeline/` – scene-based orchestration logic using PySceneDetect sampling, Detectron2 + YOLO12 detection, OpenCLIP classification, tracking, clustering, and JSON report generation.
 - `services/pipeline_worker/` – Redis stream consumer worker with explicit stage transitions, structured logging, and Prometheus metrics.
 - `services/storage/` – MongoDB repository and schemas for storing and querying inference outputs.
 - `api/` – FastAPI read API for paginated retrieval of frame-level results by `job_id`.
@@ -18,16 +18,28 @@ This repository contains a modular video inference pipeline that:
 - `docs/` – architecture notes and pipeline behavior documentation.
 - `tests/` – unit tests for pipeline worker utilities and failure policy behavior.
 
+## Pipeline diagram
+
+Requested stage order: `split -> object_detection -> classification -> object_tracking -> clustering -> report`
+
+```mermaid
+flowchart LR
+    A[Video Input] --> B[Split (PySceneDetect)]
+    B --> C[Sample Frames: First / Middle / Last]
+    C --> D[Object Detection: Detectron2 Faster R-CNN + YOLO12]
+    D --> E[Classification: OpenCLIP]
+    E --> F[Object Tracking]
+    F --> G[Clustering]
+    G --> H[Report (JSON)]
+```
+
 ## High-level data flow
 
 1. **Ingest API** receives `POST /jobs` and prepares frame manifests.
 2. A **pipeline worker** consumes queued jobs and drives state transitions:
-   `received -> decoded -> detected -> classified -> completed` (or `failed`).
-3. Worker calls Triton inference endpoints:
-   - detector model for bounding boxes/scores/labels
-   - classifier model for per-object class predictions
-4. Results are persisted and made available via the read API endpoint:
-   `GET /jobs/{job_id}/results`.
+   `split -> object_detection -> classification -> object_tracking -> clustering -> report`.
+3. Worker detects scenes with PySceneDetect and samples first/middle/last frames.
+4. The sampled frames are processed by Detectron2 Faster R-CNN + Ultralytics YOLO12, then classified by OpenCLIP, tracked, clustered, and emitted as a JSON report.
 
 ## Local development notes
 
