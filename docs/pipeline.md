@@ -2,35 +2,28 @@
 
 ## Data flow
 
-1. **Ingest API** accepts video job requests and writes a message into a Redis Stream (`jobs`) rather than doing synchronous inference.
-2. **Pipeline worker** consumers in a Redis consumer group pull jobs and execute the stage machine:
-   - `received -> decoded -> detected -> classified -> completed`
-   - failures may transition from any non-terminal state to `failed`.
-3. Worker calls dedicated **Triton Detector** and **Triton Classifier** services in sequence.
-4. Job status events are emitted as structured logs including `job_id` at every transition.
+The pipeline now runs in the following order:
 
-This queue-based split decouples request latency from long-running GPU inference and allows independent scaling.
+1. **split**: PySceneDetect detects scene boundaries.
+2. **object_detection**: sample the **first**, **middle**, and **last** frame from each scene and run both:
+   - Detectron2 Faster R-CNN
+   - Ultralytics YOLO12
+3. **classification**: classify every detected object with OpenCLIP.
+4. **object_tracking**: assign lightweight track IDs based on box center proximity.
+5. **clustering**: group tracked objects by classification label.
+6. **report**: emit a JSON report with frames, detections, clusters, and summary counters.
 
-## Failure handling
+## JSON report format
 
-- The worker enforces explicit allowed transitions with a transition map, preventing invalid stage jumps.
-- Any exception during decode/inference marks the job as `failed` and records failure duration metric.
-- Triton-call failures increment `triton_errors_total{service="detector|classifier"}` for alerting.
-- Redis consumer group + ack semantics ensure jobs are acknowledged only after processing.
+Top-level report fields:
 
-## Observability
+- `job_id`
+- `pipeline` (ordered stage list)
+- `frames` (per sampled frame with detections + track IDs + classifications)
+- `clusters` (cluster key, track IDs, count)
+- `summary` (`total_frames`, `total_detections`, `total_tracks`, `total_clusters`)
 
-Worker exposes Prometheus metrics:
+## Testing strategy (TDD)
 
-- `job_duration_seconds{status}` histogram for completed/failed durations.
-- `frames_processed_total` counter for throughput.
-- `triton_errors_total{service}` counter for model-serving failures.
-
-Structured JSON logs include `job_id`, `state`, and message labels (`job_received`, `job_detected`, etc.), enabling per-job tracing in log aggregation systems.
-
-## Scaling knobs
-
-- `ingest` deployment replicas scale request intake without impacting inference workers.
-- `pipeline-worker` replicas scale queue consumers.
-- `triton-detector` and `triton-classifier` replicas can be tuned independently based on model cost.
-- CPU/memory requests and limits in Kubernetes manifests should be tuned with real production profiling.
+- Unit tests verify pipeline stage behavior and cluster/report shape using fakes.
+- An integration test (`tests/test_pipeline_youtube_e2e.py`) downloads a YouTube sample video and executes the pipeline end-to-end when `RUN_YOUTUBE_E2E=1`.
